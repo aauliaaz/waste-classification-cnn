@@ -11,4 +11,4 @@ height_min: 71
 height_max: 6283
 brightness_mean: 159.5589113330666
 contrast_mean: 54.95738350636902
-sharpness_mean: 1861.3527987677228
+sharpness_mean: 1861.352798767723
