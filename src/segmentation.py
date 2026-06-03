@@ -1,5 +1,4 @@
 import cv2
-from cv2.gapi import mask
 import numpy as np
 from pathlib import Path
 from skimage import morphology
@@ -14,33 +13,33 @@ def _resize_keep_aspect(image, max_side=800):
 
 
 def otsu_segmentation(image, denoise=True):
-    img = _resize_keep_aspect(image)
+    img = image.copy()
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     if denoise:
         gray = cv2.GaussianBlur(gray, (5, 5), 0)
     _, mask = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    mask = morphology.remove_small_objects(mask.astype(bool), min_size=500)
+    mask = morphology.remove_small_objects(mask.astype(bool), 500)
     mask = (mask.astype(np.uint8) * 255)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
     return mask
 
 
 def hsv_segmentation(image, s_thresh=(30, 255), v_thresh=(30, 255)):
-    img = _resize_keep_aspect(image)
+    img = image.copy()
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     s_channel = hsv[:, :, 1]
     v_channel = hsv[:, :, 2]
     s_mask = cv2.inRange(s_channel, s_thresh[0], s_thresh[1])
     v_mask = cv2.inRange(v_channel, v_thresh[0], v_thresh[1])
     mask = cv2.bitwise_and(s_mask, v_mask)
-    mask = morphology.remove_small_objects(mask.astype(bool), min_size=500)
+    mask = morphology.remove_small_objects(mask.astype(bool), 500)
     mask = (mask.astype(np.uint8) * 255)
     mask = cv2.medianBlur(mask, 5)
     return mask
 
 
 def grabcut_segmentation(image, iter_count=5, rect_margin=0.02):
-    img = _resize_keep_aspect(image)
+    img = image.copy()
     h, w = img.shape[:2]
     margin_x = int(w * rect_margin)
     margin_y = int(h * rect_margin)
@@ -58,7 +57,7 @@ def grabcut_segmentation(image, iter_count=5, rect_margin=0.02):
 
 
 def kmeans_segmentation(image, k=2, attempts=4):
-    img = _resize_keep_aspect(image)
+    img = image.copy()
     Z = img.reshape((-1, 3)).astype(np.float32)
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0)
     _, labels, _ = cv2.kmeans(Z, k, None, criteria, attempts, cv2.KMEANS_PP_CENTERS)
@@ -76,14 +75,14 @@ def kmeans_segmentation(image, k=2, attempts=4):
     best_cluster = np.argmax(cluster_sizes)
 
     mask = (labels == best_cluster).astype(np.uint8).reshape(img.shape[:2]) * 255
-    mask = morphology.remove_small_objects(mask.astype(bool), min_size=300)
+    mask = morphology.remove_small_objects(mask.astype(bool), 300)
     mask = (mask.astype(np.uint8) * 255)
     mask = cv2.medianBlur(mask, 5)
     return mask
 
 
 def refine_with_grabcut(image, init_mask, iter_count=5):
-    img = _resize_keep_aspect(image)
+    img = image.copy()
     mask_gc = np.where(init_mask > 0, cv2.GC_PR_FGD, cv2.GC_PR_BGD).astype('uint8')
     bgd_model = np.zeros((1, 65), np.float64)
     fgd_model = np.zeros((1, 65), np.float64)
@@ -129,6 +128,7 @@ def apply_mask(image, mask):
     return cv2.bitwise_and(image, image, mask=mask)
 
 def ensemble_pipeline(img, init_method='hsv', return_segmented=False):
+    img = _resize_keep_aspect(img)
     if init_method == 'hsv':
         init = hsv_segmentation(img)
     else:
@@ -222,14 +222,13 @@ def batch_process(enhancement='clahe', split='val', method='otsu', src_root=None
             img = cv2.imread(str(img_path))
             if img is None:
                 continue
-            img = _resize_keep_aspect(img)
             try:
-                mask = seg_func(img)
+                mask = clean_mask(seg_func(img))
             except Exception:
                 mask = otsu_segmentation(img)
 
             # hasil segmentasi objek
-            segmented = apply_mask(img,mask)
+            segmented = apply_mask(img, mask)
             # simpan mask
             cv2.imwrite(str(out_class / f"{img_path.stem}_mask.png"), mask)
             # simpan objek hasil segmentasi
