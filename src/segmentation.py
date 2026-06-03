@@ -1,8 +1,8 @@
 import cv2
+from cv2.gapi import mask
 import numpy as np
 from pathlib import Path
 from skimage import morphology
-import os
 
 
 def _resize_keep_aspect(image, max_side=800):
@@ -61,24 +61,19 @@ def kmeans_segmentation(image, k=2, attempts=4):
     img = _resize_keep_aspect(image)
     Z = img.reshape((-1, 3)).astype(np.float32)
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0)
-    _, labels, centers = cv2.kmeans(Z, k, None, criteria, attempts, cv2.KMEANS_PP_CENTERS)
+    _, labels, _ = cv2.kmeans(Z, k, None, criteria, attempts, cv2.KMEANS_PP_CENTERS)
     labels = labels.flatten()
-    centers = centers.astype(np.uint8)
 
-    # Choose the cluster with highest mean saturation/value as foreground
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    s = hsv[:, :, 1].reshape(-1)
-    v = hsv[:, :, 2].reshape(-1)
-    best_cluster = None
-    best_score = -1
+    cluster_sizes = []
     for cluster_idx in range(k):
-        mask_cluster = labels == cluster_idx
-        if mask_cluster.sum() == 0:
-            continue
-        score = float(s[mask_cluster].mean() + v[mask_cluster].mean())
-        if score > best_score:
-            best_score = score
-            best_cluster = cluster_idx
+        cluster_mask = labels == cluster_idx
+        cluster_img = cluster_mask.reshape(img.shape[:2]).astype(np.uint8)
+        num_labels, _, stats, _ = cv2.connectedComponentsWithStats(cluster_img)
+        largest_area = 0
+        if num_labels > 1:
+            largest_area = stats[1:, cv2.CC_STAT_AREA].max()
+        cluster_sizes.append(largest_area)
+    best_cluster = np.argmax(cluster_sizes)
 
     mask = (labels == best_cluster).astype(np.uint8).reshape(img.shape[:2]) * 255
     mask = morphology.remove_small_objects(mask.astype(bool), min_size=300)
@@ -126,20 +121,24 @@ def clean_mask(mask, close_size=7, open_size=5, min_area=500):
     for c in contours:
         if cv2.contourArea(c) >= min_area:
             cv2.drawContours(out, [c], -1, 255, -1)
+    out = largest_connected_component(out)
     return out
 
 def apply_mask(image, mask):
+    mask = (mask > 0).astype(np.uint8) * 255
     return cv2.bitwise_and(image, image, mask=mask)
 
-def ensemble_pipeline(img, init_method='hsv'):
+def ensemble_pipeline(img, init_method='hsv', return_segmented=False):
     if init_method == 'hsv':
         init = hsv_segmentation(img)
     else:
         init = kmeans_segmentation(img)
     refined = refine_with_grabcut(img, init)
     final = clean_mask(refined, close_size=7, open_size=5, min_area=500)
+    segmented = apply_mask(img,final)
+    if return_segmented:
+        return init, refined, final, segmented
     return init, refined, final
-
 
 def batch_ensemble_save(enhancement='clahe', split='val', init_method='hsv', src_root=None, dst_root=None):
     project_root = Path(__file__).resolve().parent.parent
@@ -164,10 +163,15 @@ def batch_ensemble_save(enhancement='clahe', split='val', init_method='hsv', src
             img = cv2.imread(str(img_path))
             if img is None:
                 continue
-            _, _, final = ensemble_pipeline(img, init_method=init_method)
+            _, _, final, segmented = ensemble_pipeline(img, init_method=init_method, return_segmented=True)
             cv2.imwrite(str(out_class / (img_path.stem + '_mask.png')), final)
+            cv2.imwrite(str(out_class / (img_path.stem + '_segmented.png')), segmented)
     return dst_root
 
+def foreground_ratio(mask):
+    return float(
+        np.sum(mask > 0)
+    ) / float(mask.size)
 
 def batch_ensemble_all(enhancements=None, splits=None, init_method='hsv'):
     if enhancements is None:
@@ -182,79 +186,6 @@ def batch_ensemble_all(enhancements=None, splits=None, init_method='hsv'):
             dst = batch_ensemble_save(enhancement, split, init_method=init_method)
             results[key] = str(dst)
     return results
-
-
-def _binarize_mask(mask):
-    if mask.dtype != np.uint8:
-        mask = mask.astype(np.uint8)
-    return (mask > 0).astype(np.uint8)
-
-
-def iou(mask_pred, mask_gt):
-    pred = _binarize_mask(mask_pred)
-    gt = _binarize_mask(mask_gt)
-    intersection = np.logical_and(pred, gt).sum()
-    union = np.logical_or(pred, gt).sum()
-    if union == 0:
-        return 1.0 if pred.sum() == 0 else 0.0
-    return float(intersection) / float(union)
-
-
-def dice(mask_pred, mask_gt):
-    pred = _binarize_mask(mask_pred)
-    gt = _binarize_mask(mask_gt)
-    intersection = np.logical_and(pred, gt).sum()
-    denom = pred.sum() + gt.sum()
-    if denom == 0:
-        return 1.0
-    return 2.0 * float(intersection) / float(denom)
-
-
-def evaluate_directory(pred_root, gt_root, image_extensions=None):
-    if image_extensions is None:
-        image_extensions = ['.jpg', '.jpeg', '.png', '.webp']
-
-    pred_root = Path(pred_root)
-    gt_root = Path(gt_root)
-    metrics = {
-        'iou': [],
-        'dice': []
-    }
-
-    for class_folder in sorted(pred_root.iterdir()):
-        if not class_folder.is_dir():
-            continue
-        gt_class_folder = gt_root / class_folder.name
-        if not gt_class_folder.exists():
-            continue
-
-        for pred_path in sorted(class_folder.iterdir()):
-            if not pred_path.is_file() or pred_path.suffix.lower() not in image_extensions:
-                continue
-            gt_path = gt_class_folder / pred_path.name
-            if not gt_path.exists():
-                continue
-
-            pred_mask = cv2.imread(str(pred_path), cv2.IMREAD_GRAYSCALE)
-            gt_mask = cv2.imread(str(gt_path), cv2.IMREAD_GRAYSCALE)
-            if pred_mask is None or gt_mask is None:
-                continue
-
-            metrics['iou'].append(iou(pred_mask, gt_mask))
-            metrics['dice'].append(dice(pred_mask, gt_mask))
-
-    if len(metrics['iou']) == 0:
-        return {
-            'mean_iou': None,
-            'mean_dice': None,
-            'count': 0
-        }
-    return {
-        'mean_iou': float(np.mean(metrics['iou'])),
-        'mean_dice': float(np.mean(metrics['dice'])),
-        'count': len(metrics['iou'])
-    }
-
 
 def batch_process(enhancement='clahe', split='val', method='otsu', src_root=None, dst_root=None):
     project_root = Path(__file__).resolve().parent.parent
@@ -291,14 +222,18 @@ def batch_process(enhancement='clahe', split='val', method='otsu', src_root=None
             img = cv2.imread(str(img_path))
             if img is None:
                 continue
+            img = _resize_keep_aspect(img)
             try:
                 mask = seg_func(img)
             except Exception:
                 mask = otsu_segmentation(img)
 
-            out_path = out_class / (img_path.stem + '_mask.png')
-            cv2.imwrite(str(out_path), mask)
-
+            # hasil segmentasi objek
+            segmented = apply_mask(img,mask)
+            # simpan mask
+            cv2.imwrite(str(out_class / f"{img_path.stem}_mask.png"), mask)
+            # simpan objek hasil segmentasi
+            cv2.imwrite(str(out_class / f"{img_path.stem}_segmented.png"),segmented)
 
 if __name__ == '__main__':
     import argparse
