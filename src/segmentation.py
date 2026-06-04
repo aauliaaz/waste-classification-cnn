@@ -23,6 +23,28 @@ def otsu_segmentation(image, denoise=True):
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
     return mask
 
+def adaptive_segmentation(
+    image,
+    block_size=31,
+    c=5
+):
+    img = _resize_keep_aspect(image)
+    gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray,(5,5),0)
+    mask = cv2.adaptiveThreshold(
+        gray,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        block_size,
+        c
+    )
+
+    mask = morphology.remove_small_objects( mask.astype(bool), min_size=500)
+    mask = (mask.astype(np.uint8) * 255)
+    mask = cv2.morphologyEx(mask,cv2.MORPH_CLOSE, np.ones((7,7), np.uint8))
+
+    return mask
 
 def hsv_segmentation(image, s_thresh=(30, 255), v_thresh=(30, 255)):
     img = image.copy()
@@ -200,6 +222,7 @@ def batch_process(enhancement='clahe', split='val', method='otsu', src_root=None
 
     methods = {
         'otsu': otsu_segmentation,
+        'adaptive': adaptive_segmentation,
         'hsv': hsv_segmentation,
         'grabcut': grabcut_segmentation,
         'kmeans': kmeans_segmentation
@@ -240,7 +263,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Batch segmentation for enhanced dataset')
     parser.add_argument('--enhancement', default='clahe', help='enhancement folder to use')
     parser.add_argument('--split', default='val', help='data split (train/val/test')
-    parser.add_argument('--method', default='otsu', help='segmentation method: otsu|hsv|grabcut|kmeans')
+    parser.add_argument('--method', default='otsu', help='segmentation method: otsu|adaptive|hsv|grabcut|kmeans')
     args = parser.parse_args()
 
     batch_process(enhancement=args.enhancement, split=args.split, method=args.method)
