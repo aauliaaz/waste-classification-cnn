@@ -1,6 +1,9 @@
 opencv-python
 numpy
+pandas
 scikit-image
+scikit-learn
 matplotlib
+seaborn
+joblib
 tensorflow>=2.10
-
