@@ -25,8 +25,8 @@ def otsu_segmentation(image, denoise=True):
 
 def adaptive_segmentation(
     image,
-    block_size=31,
-    c=5
+    block_size=71,
+    c=2
 ):
     img = _resize_keep_aspect(image)
     gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
