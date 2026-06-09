@@ -1,0 +1,3 @@
+model,scenario,phase,accuracy,precision_macro,recall_macro,f1_macro
+MobileNetV2_CPU,original,head,0.8885,0.8973,0.8988,0.8965
+MobileNetV2_CPU,original,finetune,0.8989,0.9041,0.9061,0.9044

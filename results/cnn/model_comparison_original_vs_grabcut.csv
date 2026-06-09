@@ -1,0 +1,3 @@
+model_name,dataset,test_loss,test_accuracy,precision_macro,recall_macro,f1_macro,precision_weighted,recall_weighted,f1_weighted
+cnn_original_baseline,original,1.1145,0.5661,0.5789,0.5731,0.5709,0.5811,0.5661,0.5676
+cnn_grabcut,grabcut,1.18,0.548,0.5536,0.5401,0.5448,0.5559,0.548,0.5507

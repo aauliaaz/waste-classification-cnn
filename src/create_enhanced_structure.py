@@ -49,9 +49,6 @@ def create_structure():
                     exist_ok=True
                 )
 
-    print(
-        "Struktur folder enhancement berhasil dibuat."
-    )
 
 
 if __name__ == "__main__":
