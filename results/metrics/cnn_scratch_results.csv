@@ -1,0 +1,5 @@
+accuracy,precision_macro,recall_macro,f1_macro,scenario,model
+0.5765,0.5908,0.589,0.5842,original,cnn_baseline
+0.5946,0.6153,0.6018,0.6015,clahe,cnn_baseline
+0.6465,0.664,0.6626,0.6579,clahe_gaussian,cnn_baseline
+0.5609,0.5928,0.5539,0.5639,original_grabcut,cnn_baseline

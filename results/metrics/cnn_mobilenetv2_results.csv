@@ -1,0 +1,7 @@
+accuracy,precision_macro,recall_macro,f1_macro,model,scenario,phase
+0.8902,0.8969,0.8989,0.8968,MobileNetV2,original,head
+0.9006,0.9057,0.9067,0.9054,MobileNetV2,original,finetune
+0.8799,0.8863,0.8885,0.8861,MobileNetV2,clahe,head
+0.885,0.8889,0.8929,0.8896,MobileNetV2,clahe,finetune
+0.8799,0.8858,0.8883,0.8859,MobileNetV2,clahe_gaussian,head
+0.8885,0.8946,0.8951,0.8945,MobileNetV2,clahe_gaussian,finetune
