@@ -1,0 +1,7 @@
+streamlit>=1.36
+tensorflow>=2.10
+opencv-python
+numpy
+pandas
+pillow
+scikit-image
